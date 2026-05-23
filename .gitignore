@@ -8,5 +8,6 @@ __pycache__/
 
 core
 core.*
+MUJOCO_LOG.TXT
 
 autobio/libmjlab_thread.so.*

@@ -16,6 +16,10 @@ constexpr mjtNum kDefaultRadius = 0.014;
 constexpr mjtNum kDefaultLow = -1.0;
 constexpr mjtNum kDefaultHigh = 1.2;
 constexpr mjtNum kDefaultGauge = 0.0008;
+#ifndef MJLAB_THREAD_GRADIENT_EPS
+#define MJLAB_THREAD_GRADIENT_EPS 5e-5
+#endif
+constexpr mjtNum kGradientEps = MJLAB_THREAD_GRADIENT_EPS;
 
 struct ThreadSdf {
   mjtNum pitch;
@@ -66,41 +70,67 @@ ThreadSdf FromAttributes(const mjtNum attribute[]) {
   return sdf;
 }
 
-mjtNum DistanceToHelixEndpoint(const mjtNum point[3], const ThreadSdf& sdf, mjtNum turns);
+mjtNum DistanceToHelixEndpoint(
+    const mjtNum point[3], const ThreadSdf& sdf, mjtNum turns, mjtNum closest[3]);
 
-mjtNum DistanceToHelixAt(const mjtNum point[3], const ThreadSdf& sdf, mjtNum turns) {
-  return DistanceToHelixEndpoint(point, sdf, turns);
+void HelixPoint(mjtNum helix_point[3], const ThreadSdf& sdf, mjtNum turns) {
+  const mjtNum phase = 2.0 * mjPI * turns;
+  helix_point[0] = sdf.radius * std::cos(phase);
+  helix_point[1] = sdf.radius * std::sin(phase);
+  helix_point[2] = sdf.pitch * turns;
 }
 
-mjtNum DistanceToHelixEndpoint(const mjtNum point[3], const ThreadSdf& sdf, mjtNum turns) {
-  const mjtNum phase = 2.0 * mjPI * turns;
-  const mjtNum hx = sdf.pitch * turns;
-  const mjtNum hy = sdf.radius * std::cos(phase);
-  const mjtNum hz = sdf.radius * std::sin(phase);
-  const mjtNum dx = hx - point[0];
-  const mjtNum dy = hy - point[1];
-  const mjtNum dz = hz - point[2];
+mjtNum DistanceToHelixAt(
+    const mjtNum point[3], const ThreadSdf& sdf, mjtNum turns, mjtNum closest[3]) {
+  return DistanceToHelixEndpoint(point, sdf, turns, closest);
+}
+
+mjtNum DistanceToHelixEndpoint(
+    const mjtNum point[3], const ThreadSdf& sdf, mjtNum turns, mjtNum closest[3]) {
+  HelixPoint(closest, sdf, turns);
+  const mjtNum dx = closest[0] - point[0];
+  const mjtNum dy = closest[1] - point[1];
+  const mjtNum dz = closest[2] - point[2];
   return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-mjtNum ThreadDistanceWithAttributes(const mjtNum point[3], const mjtNum attribute[]) {
-  const ThreadSdf sdf = FromAttributes(attribute);
-  const mjtNum azimuth = std::atan2(point[2], point[1]);
+void SelectClosestPoint(mjtNum closest[3], const mjtNum point[3], const ThreadSdf& sdf) {
+  const mjtNum azimuth = std::atan2(point[1], point[0]);
   const mjtNum azimuth_turns = azimuth / (2.0 * mjPI);
-  const mjtNum axial_turns = point[0] / sdf.pitch;
+  const mjtNum axial_turns = point[2] / sdf.pitch;
   const mjtNum nearest_turn = azimuth_turns + std::round(axial_turns - azimuth_turns);
   const mjtNum clamped_turn = mju_min(mju_max(nearest_turn, sdf.low), sdf.high);
 
   // Include endpoint candidates. This avoids poor behavior near bounded helix ends.
-  mjtNum distance = DistanceToHelixAt(point, sdf, clamped_turn);
-  distance = mju_min(distance, DistanceToHelixEndpoint(point, sdf, sdf.low));
-  distance = mju_min(distance, DistanceToHelixEndpoint(point, sdf, sdf.high));
+  mjtNum candidate[3];
+  mjtNum distance = DistanceToHelixAt(point, sdf, clamped_turn, closest);
+
+  mjtNum candidate_distance = DistanceToHelixEndpoint(point, sdf, sdf.low, candidate);
+  if (candidate_distance < distance) {
+    distance = candidate_distance;
+    mju_copy3(closest, candidate);
+  }
+
+  candidate_distance = DistanceToHelixEndpoint(point, sdf, sdf.high, candidate);
+  if (candidate_distance < distance) {
+    mju_copy3(closest, candidate);
+  }
+}
+
+mjtNum ThreadDistanceWithAttributes(const mjtNum point[3], const mjtNum attribute[]) {
+  const ThreadSdf sdf = FromAttributes(attribute);
+  mjtNum closest[3];
+  SelectClosestPoint(closest, point, sdf);
+  const mjtNum dx = closest[0] - point[0];
+  const mjtNum dy = closest[1] - point[1];
+  const mjtNum dz = closest[2] - point[2];
+  const mjtNum distance = std::sqrt(dx * dx + dy * dy + dz * dz);
   return distance - sdf.gauge;
 }
 
 void ThreadGradientWithAttributes(
     mjtNum gradient[3], const mjtNum point[3], const mjtNum attribute[]) {
-  const mjtNum eps = 1e-6;
+  const mjtNum eps = kGradientEps;
   mjtNum p_plus[3] = {point[0], point[1], point[2]};
   mjtNum p_minus[3] = {point[0], point[1], point[2]};
 
@@ -200,14 +230,14 @@ MJLAB_PLUGIN_INIT {
   plugin.sdf_aabb = +[](mjtNum aabb[6], const mjtNum* attribute) {
     const ThreadSdf sdf = FromAttributes(attribute);
     const mjtNum radial = sdf.radius + 2.0 * sdf.gauge;
-    const mjtNum x_low = sdf.pitch * sdf.low;
-    const mjtNum x_high = sdf.pitch * sdf.high;
-    aabb[0] = 0.5 * (x_low + x_high);
+    const mjtNum z_low = sdf.pitch * sdf.low;
+    const mjtNum z_high = sdf.pitch * sdf.high;
+    aabb[0] = 0;
     aabb[1] = 0;
-    aabb[2] = 0;
-    aabb[3] = 0.5 * (x_high - x_low) + 2.0 * sdf.gauge;
+    aabb[2] = 0.5 * (z_low + z_high);
+    aabb[3] = radial;
     aabb[4] = radial;
-    aabb[5] = radial;
+    aabb[5] = 0.5 * (z_high - z_low) + 2.0 * sdf.gauge;
   };
 
   mjp_registerPlugin(&plugin);
