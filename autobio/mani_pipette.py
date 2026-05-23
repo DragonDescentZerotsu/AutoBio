@@ -1,5 +1,10 @@
 import mujoco
-mujoco.mj_loadPluginLibrary('./libmjlab.so.3.3.0')
+import os
+from pathlib import Path
+
+if os.environ.get("AUTOBIO_SKIP_MJLAB") != "1":
+    _plugin_path = Path(__file__).with_name("libmjlab.so.3.3.0")
+    mujoco.mj_loadPluginLibrary(str(_plugin_path))
 import numpy as np
 from kinematics import IK, Pose, slerp
 from topp import Topp

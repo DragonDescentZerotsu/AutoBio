@@ -213,6 +213,8 @@ class Manager:
         - /: enter debugger (ipdb)
         """
         assert fps > 0 and realtime_factor >= 0  # realtime_factor == 0 means as fast as possible
+        if self.model is None:
+            self.reload()
         def adjust_step(timestep: float):
             step_per_frame = realtime_factor / fps / timestep
             step_per_frame = int(math.ceil(step_per_frame))
