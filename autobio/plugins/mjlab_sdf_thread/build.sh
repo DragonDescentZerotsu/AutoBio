@@ -2,7 +2,8 @@
 set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-/data/tianang/miniconda/envs/aero_sim/bin/python}"
-GRADIENT_EPS="${GRADIENT_EPS:-5e-5}"
+GRADIENT_EPS="${GRADIENT_EPS:-1e-8}"
+GRADIENT_Z_SCALE="${GRADIENT_Z_SCALE:-1.0}"
 MUJOCO_DIR="$("$PYTHON_BIN" - <<'PY'
 import pathlib
 import mujoco
@@ -21,6 +22,7 @@ OUT="$REPO_AUTOBIO_DIR/libmjlab_thread.so.$MUJOCO_VERSION"
 
 g++ -std=c++17 -O2 -fPIC -shared \
   -DMJLAB_THREAD_GRADIENT_EPS="$GRADIENT_EPS" \
+  -DMJLAB_THREAD_GRADIENT_Z_SCALE="$GRADIENT_Z_SCALE" \
   -I"$MUJOCO_DIR/include" \
   "$SCRIPT_DIR/thread.cc" \
   "$MUJOCO_DIR/libmujoco.so.$MUJOCO_VERSION" \

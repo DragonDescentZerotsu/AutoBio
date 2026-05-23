@@ -22,6 +22,12 @@ Build for the current `aero_sim` MuJoCo wheel from the repository root:
 
 The output is `autobio/libmjlab_thread.so.<mujoco-version>`.
 
+`build.sh` accepts these optional overrides:
+
+- `PYTHON_BIN`: Python interpreter whose installed `mujoco` wheel is used for headers/libs
+- `GRADIENT_EPS`: runtime SDF gradient finite-difference step, default `1e-8`
+- `GRADIENT_Z_SCALE`: experimental multiplier for the z gradient component, default `1.0`
+
 Run the isolated screw-thread regression in separate processes because the original and
 reimplemented libraries both register `mjlab.sdf.thread`:
 
@@ -42,13 +48,13 @@ Current validation:
 - In the `autobio` MuJoCo 3.3.0 environment, this reimplementation produces the same generated
   SDF mesh vertex/face counts, bounds, mesh positions, and mesh quaternions as the bundled binary
   for `model/scene/screw_test.xml`.
-- In the same MuJoCo 3.3.0 screw test, the current default `GRADIENT_EPS=5e-5` behavior is close
-  but not identical:
+- In the same MuJoCo 3.3.0 screw test, the current default `GRADIENT_EPS=1e-8` behavior closely
+  matches the bundled binary:
   - `ctrl=1`, 2000 steps: original yaw `0.5075`, dz `0.000172`, max nut-bolt normal force
-    `1.8066`; reimplementation yaw `0.6502`, dz `0.000236`, force `1.6295`.
+    `1.7502`; reimplementation yaw `0.5075`, dz `0.000172`, force `1.7500`.
   - `ctrl=-1`, 2000 steps: original yaw `-1.2978`, dz `-0.000980`, force `7.6780`;
-    reimplementation yaw `-1.0072`, dz `-0.000967`, force `8.1992`.
-- In the `aero_sim` MuJoCo 3.8.1 environment, the original `mani_pipette` task compiles, resets,
-  and steps with this plugin loaded manually.
+    reimplementation yaw `-1.2981`, dz `-0.000971`, force `7.3911`.
+- In the `aero_sim` MuJoCo 3.8.1 environment, `mani_pipette`, `screw_loosen`, and
+  `screw_tighten` compile/reset with this plugin loaded manually; `mani_pipette` also steps.
 - MuJoCo 3.8.1 produces different contact dynamics from MuJoCo 3.3.0 even with this plugin, so
   exact behavior parity should be judged first in the `autobio` MuJoCo 3.3.0 environment.

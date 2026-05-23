@@ -17,9 +17,13 @@ constexpr mjtNum kDefaultLow = -1.0;
 constexpr mjtNum kDefaultHigh = 1.2;
 constexpr mjtNum kDefaultGauge = 0.0008;
 #ifndef MJLAB_THREAD_GRADIENT_EPS
-#define MJLAB_THREAD_GRADIENT_EPS 5e-5
+#define MJLAB_THREAD_GRADIENT_EPS 1e-8
+#endif
+#ifndef MJLAB_THREAD_GRADIENT_Z_SCALE
+#define MJLAB_THREAD_GRADIENT_Z_SCALE 1.0
 #endif
 constexpr mjtNum kGradientEps = MJLAB_THREAD_GRADIENT_EPS;
+constexpr mjtNum kGradientZScale = MJLAB_THREAD_GRADIENT_Z_SCALE;
 
 struct ThreadSdf {
   mjtNum pitch;
@@ -98,22 +102,29 @@ void SelectClosestPoint(mjtNum closest[3], const mjtNum point[3], const ThreadSd
   const mjtNum azimuth = std::atan2(point[1], point[0]);
   const mjtNum azimuth_turns = azimuth / (2.0 * mjPI);
   const mjtNum axial_turns = point[2] / sdf.pitch;
-  const mjtNum nearest_turn = azimuth_turns + std::round(axial_turns - azimuth_turns);
-  const mjtNum clamped_turn = mju_min(mju_max(nearest_turn, sdf.low), sdf.high);
+  const mjtNum nearest_k = std::round(axial_turns - azimuth_turns);
+  const mjtNum low_k = std::ceil(sdf.low - azimuth_turns);
+  const mjtNum high_k = std::floor(sdf.high - azimuth_turns);
 
-  // Include endpoint candidates. This avoids poor behavior near bounded helix ends.
   mjtNum candidate[3];
-  mjtNum distance = DistanceToHelixAt(point, sdf, clamped_turn, closest);
+  mjtNum distance = 0;
 
-  mjtNum candidate_distance = DistanceToHelixEndpoint(point, sdf, sdf.low, candidate);
-  if (candidate_distance < distance) {
-    distance = candidate_distance;
-    mju_copy3(closest, candidate);
-  }
-
-  candidate_distance = DistanceToHelixEndpoint(point, sdf, sdf.high, candidate);
-  if (candidate_distance < distance) {
-    mju_copy3(closest, candidate);
+  if (low_k <= nearest_k && nearest_k <= high_k) {
+    distance = DistanceToHelixAt(point, sdf, nearest_k + azimuth_turns, closest);
+  } else if (nearest_k < low_k) {
+    distance = DistanceToHelixEndpoint(point, sdf, sdf.low, closest);
+    const mjtNum candidate_distance =
+        DistanceToHelixAt(point, sdf, low_k + azimuth_turns, candidate);
+    if (candidate_distance < distance) {
+      mju_copy3(closest, candidate);
+    }
+  } else {
+    distance = DistanceToHelixEndpoint(point, sdf, sdf.high, closest);
+    const mjtNum candidate_distance =
+        DistanceToHelixAt(point, sdf, high_k + azimuth_turns, candidate);
+    if (candidate_distance < distance) {
+      mju_copy3(closest, candidate);
+    }
   }
 }
 
@@ -144,13 +155,7 @@ void ThreadGradientWithAttributes(
     p_minus[i] = point[i];
   }
 
-  const mjtNum norm = std::sqrt(
-      gradient[0] * gradient[0] + gradient[1] * gradient[1] + gradient[2] * gradient[2]);
-  if (norm > 1e-12) {
-    gradient[0] /= norm;
-    gradient[1] /= norm;
-    gradient[2] /= norm;
-  }
+  gradient[2] *= kGradientZScale;
 }
 
 ThreadSdf* GetThread(const mjData* data, int instance) {
