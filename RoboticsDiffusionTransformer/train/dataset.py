@@ -17,6 +17,29 @@ from data.filelock import FileLock
 from train.image_corrupt import image_corrupt
 
 
+AUTOBIO_DATASET_FLAVORS = ("mujoco", "blender")
+
+
+def _strip_autobio_flavor(dataset_name):
+    for flavor in AUTOBIO_DATASET_FLAVORS:
+        suffix = f"-{flavor}"
+        if dataset_name.endswith(suffix):
+            return dataset_name[:-len(suffix)]
+    return dataset_name
+
+
+def _add_autobio_flavor_names(dataset_names):
+    names = list(dataset_names)
+    for name in dataset_names:
+        if _strip_autobio_flavor(name) != name:
+            continue
+        for flavor in AUTOBIO_DATASET_FLAVORS:
+            flavored_name = f"{name}-{flavor}"
+            if flavored_name not in names:
+                names.append(flavored_name)
+    return names
+
+
 def get_clean_item(chunk_dir):
     """
     Get indexes of clean items in a chunk.
@@ -105,7 +128,7 @@ class VLAConsumerDataset(Dataset):
         dataset_names_cfg = 'configs/pretrain_datasets.json' \
             if dataset_type == 'pretrain' else 'configs/finetune_datasets.json'
         with open(dataset_names_cfg, 'r') as file:
-            DATASET_NAMES = json.load(file)
+            DATASET_NAMES = _add_autobio_flavor_names(json.load(file))
         # Create the mapping between dataset name and id
         self.dataset_name2id = {name: i for i, name in enumerate(DATASET_NAMES)}
         self.dataset_id2name = {i: name for i, name in enumerate(DATASET_NAMES)}
@@ -285,14 +308,20 @@ class VLAConsumerDataset(Dataset):
                 data_dict = {}
                 data_dict['dataset_name'] = content['dataset_name']
                 data_dict['data_idx'] = self.dataset_name2id[data_dict['dataset_name']]
-                data_dict['ctrl_freq'] = self.control_freq[data_dict['dataset_name']] \
+                stat_dataset_name = data_dict['dataset_name']
+                if stat_dataset_name not in self.dataset_stat:
+                    stat_dataset_name = _strip_autobio_flavor(stat_dataset_name)
+                freq_dataset_name = data_dict['dataset_name']
+                if freq_dataset_name not in self.control_freq:
+                    freq_dataset_name = _strip_autobio_flavor(freq_dataset_name)
+                data_dict['ctrl_freq'] = self.control_freq[freq_dataset_name] \
                     if random.random() > self.cond_mask_prob else 0
                 
                 if self.state_noise_snr is not None:
                     states += np.random.normal(
                         0.0, state_std / np.sqrt(10 ** (self.state_noise_snr / 10)), 
                         states.shape)
-                ds_state_mean = np.array(self.dataset_stat[data_dict['dataset_name']]['state_mean'])
+                ds_state_mean = np.array(self.dataset_stat[stat_dataset_name]['state_mean'])
                 ds_state_mean = np.tile(ds_state_mean[None], (states.shape[0], 1))
                 # Randomly mask the states by the mean state
                 data_dict["states"] = states \

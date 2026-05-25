@@ -829,6 +829,36 @@ add_config(
     ),
 )
 
+def _add_autobio_flavor_configs():
+    flavor_names = ("mujoco", "blender")
+    base_configs = [
+        config
+        for config in _CONFIGS
+        if isinstance(config.data, LeRoboAutoBioDataConfig) and not config.name.endswith("-lora")
+    ]
+
+    def flavored_repo_id(repo_id: str | tuple[str], flavor: str) -> str | tuple[str]:
+        if isinstance(repo_id, str):
+            return f"{repo_id}-{flavor}"
+        return tuple(f"{repo}-{flavor}" for repo in repo_id)
+
+    for flavor in flavor_names:
+        flavored_configs = []
+        for config in base_configs:
+            assert isinstance(config.data, LeRoboAutoBioDataConfig)
+            assets = config.data.assets
+            if assets.asset_id is not None:
+                assets = dataclasses.replace(assets, asset_id=f"{assets.asset_id}-{flavor}")
+            data = dataclasses.replace(
+                config.data,
+                repo_id=flavored_repo_id(config.data.repo_id, flavor),
+                assets=assets,
+            )
+            flavored_configs.append(dataclasses.replace(config, name=f"{config.name}-{flavor}", data=data))
+        add_config(*flavored_configs)
+
+_add_autobio_flavor_configs()
+
 if len({config.name for config in _CONFIGS}) != len(_CONFIGS):
     raise ValueError("Config names must be unique.")
 _CONFIGS_DICT = {config.name: config for config in _CONFIGS}
