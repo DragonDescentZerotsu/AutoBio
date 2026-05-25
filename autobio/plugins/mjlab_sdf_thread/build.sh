@@ -25,6 +25,7 @@ g++ -std=c++17 -O2 -fPIC -shared \
   -DMJLAB_THREAD_GRADIENT_Z_SCALE="$GRADIENT_Z_SCALE" \
   -I"$MUJOCO_DIR/include" \
   "$SCRIPT_DIR/thread.cc" \
+  "$SCRIPT_DIR/detent.cc" \
   "$MUJOCO_DIR/libmujoco.so.$MUJOCO_VERSION" \
   -Wl,-rpath,"$MUJOCO_DIR" \
   -o "$OUT"
